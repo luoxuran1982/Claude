@@ -93,6 +93,11 @@ def main(argv=None) -> None:
     ap.add_argument("--no-refresh", action="store_true", help="启动时不自动更新")
     ap.add_argument("--serve-only", action="store_true", help="只启动服务（开发/测试用）")
     args = ap.parse_args(argv)
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")
+        except Exception:
+            pass
 
     directory = data_dir()
     setup_logging(directory)

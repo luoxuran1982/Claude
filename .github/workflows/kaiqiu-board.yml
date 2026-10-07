@@ -7,6 +7,10 @@ on:
     paths: ["kaiqiu-board/**", ".github/workflows/kaiqiu-board.yml"]
   workflow_dispatch:
 
+env:
+  PYTHONIOENCODING: utf-8
+  PYTHONUTF8: "1"
+
 defaults:
   run:
     working-directory: kaiqiu-board

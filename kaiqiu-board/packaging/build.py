@@ -22,6 +22,12 @@ sys.path.insert(0, str(ROOT / "packaging"))
 from kaiqiu import APP_NAME, __version__  # noqa: E402
 import make_icon  # noqa: E402
 
+for _stream in (sys.stdout, sys.stderr):  # Windows CI 控制台默认不是 UTF-8
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 NAME = "KaiqiuBoard"
 DIST = ROOT / "dist"
 
