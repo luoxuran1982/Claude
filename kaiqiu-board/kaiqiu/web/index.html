@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>开球网数据看板</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+<script src="vendor/echarts.min.js" defer></script>
+<script src="model.js" defer></script>
+<script src="app.js" defer></script>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><img src="icon.svg" alt="" width="28" height="28"><div><b>开球网数据看板</b><small>全国 · 35 区域</small></div></div>
+  <nav class="tabs" role="tablist" aria-label="栏目">
+    <button role="tab" data-tab="overview">概览</button>
+    <button role="tab" data-tab="regions">区域</button>
+    <button role="tab" data-tab="annual">年度</button>
+    <button role="tab" data-tab="compare">自定义对比</button>
+    <button role="tab" data-tab="periods">近期热度</button>
+    <button role="tab" data-tab="table">明细</button>
+  </nav>
+  <div class="top-actions">
+    <div class="seg" role="radiogroup" aria-label="指标" id="metric">
+      <button data-v="participants" role="radio">参赛人次</button><button data-v="events" role="radio">比赛场次</button>
+    </div>
+    <label class="month-pick">月份 <select id="month"></select></label>
+    <button id="refresh" class="btn" type="button" title="重新从开球网取全部历史">↻ 刷新</button>
+    <div class="menu-wrap">
+      <button id="export-btn" class="btn primary" type="button" aria-haspopup="true">导出 ▾</button>
+      <div id="export-menu" class="menu" hidden>
+        <button data-export="xlsx">完整 Excel 报表</button>
+        <button data-export="view-csv">当前页表格（CSV）</button>
+      </div>
+    </div>
+    <button id="settings-btn" class="btn icon" type="button" title="设置" aria-label="设置">⚙</button>
+  </div>
+</header>
+
+<div class="statusbar">
+  <span id="status-dot" class="dot"></span><span id="status-text">正在连接…</span>
+  <span id="status-time" class="muted"></span>
+  <button id="changes-link" class="link" type="button" hidden></button>
+  <div id="progress" class="progress" hidden><i></i></div>
+</div>
+<div id="error" class="banner error" role="alert" hidden></div>
+
+<main>
+<!-- 概览 -->
+<section class="view" data-view="overview">
+  <div id="kpis" class="kpis"></div>
+  <div class="card">
+    <div class="card-head"><div><h2 id="ov-trend-title">全国趋势</h2><p class="muted">拖动下方滑块或点按钮选择时间范围；虚线为进行中月份</p></div>
+      <div class="head-tools"><div class="seg small" id="ov-range"><button data-v="12">1年</button><button data-v="24">2年</button><button data-v="36">3年</button><button data-v="60">5年</button><button data-v="0">全部</button></div><button class="btn icon small" data-png="ov-trend" title="保存图片">⤓</button></div></div>
+    <div id="ov-trend" class="chart tall"></div>
+  </div>
+  <div class="grid2">
+    <div class="card"><div class="card-head"><div><h2 id="ov-top-title">区域前 12</h2><p class="muted" id="ov-top-sub"></p></div><button class="btn icon small" data-png="ov-top" title="保存图片">⤓</button></div><div id="ov-top" class="chart"></div></div>
+    <div class="card"><div class="card-head"><div><h2>同比变化最大的区域</h2><p class="muted" id="ov-movers-sub"></p></div></div><div id="ov-movers" class="movers"></div></div>
+  </div>
+  <div class="card"><div class="card-head"><div><h2>区域 × 月份 热力图</h2><p class="muted" id="ov-heat-sub"></p></div>
+    <div class="head-tools"><div class="seg small" id="heat-mode"><button data-v="yoy">同比</button><button data-v="share">占全国</button></div><button class="btn icon small" data-png="ov-heat" title="保存图片">⤓</button></div></div>
+    <div id="ov-heat" class="chart heat"></div></div>
+</section>
+
+<!-- 区域 -->
+<section class="view" data-view="regions">
+  <div class="grid-regions">
+    <div class="card">
+      <div class="card-head"><div><h2>35 区域</h2><p class="muted" id="rg-sub"></p></div><input id="rg-search" type="search" placeholder="搜索区域" aria-label="搜索区域"></div>
+      <div class="table-wrap tall"><table class="data" id="rg-table"><thead><tr>
+        <th data-sort="name">区域</th><th data-sort="value" class="num">数值</th><th data-sort="share" class="num">占全国</th><th data-sort="mom" class="num">环比</th><th data-sort="yoy" class="num">同比</th><th data-sort="streak" class="num">连涨</th><th>近 24 月</th>
+      </tr></thead><tbody></tbody></table></div>
+      <p class="foot">点击列名排序，点击区域看右侧详情。基数为 0 显示“新增”，没有去年同月显示 —。</p>
+    </div>
+    <div class="stack">
+      <div id="rg-kpis" class="kpis compact"></div>
+      <div class="card"><div class="card-head"><div><h2 id="rg-trend-title">趋势</h2><p class="muted">与全国同一时间轴</p></div><button class="btn icon small" data-png="rg-trend" title="保存图片">⤓</button></div><div id="rg-trend" class="chart"></div></div>
+      <div class="card"><div class="card-head"><div><h2 id="rg-season-title">季节规律</h2><p class="muted">最近 4 年逐月对照</p></div><button class="btn icon small" data-png="rg-season" title="保存图片">⤓</button></div><div id="rg-season" class="chart"></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- 年度 -->
+<section class="view" data-view="annual">
+  <div class="filters card">
+    <label>区域 <select id="an-area"></select></label>
+    <label>年份 <select id="an-year"></select></label>
+    <label class="check"><input type="checkbox" id="an-open"> 含进行中月份</label>
+    <span class="muted" id="an-note"></span>
+  </div>
+  <div id="an-kpis" class="kpis"></div>
+  <div class="grid2">
+    <div class="card"><div class="card-head"><div><h2 id="an-bars-title">历年合计</h2><p class="muted">浅色柱为不满 12 个月的年份；同比只和去年相同月份比</p></div><button class="btn icon small" data-png="an-bars" title="保存图片">⤓</button></div><div id="an-bars" class="chart"></div></div>
+    <div class="card"><div class="card-head"><div><h2 id="an-months-title">逐月对照</h2><p class="muted">所选年份与前一年</p></div><button class="btn icon small" data-png="an-months" title="保存图片">⤓</button></div><div id="an-months" class="chart"></div></div>
+  </div>
+  <div class="card"><div class="card-head"><div><h2 id="an-rank-title">区域年度排名</h2><p class="muted" id="an-rank-sub"></p></div></div>
+    <div class="table-wrap"><table class="data" id="an-table"><thead><tr><th>排名</th><th>区域</th><th class="num">合计</th><th class="num">占全国</th><th class="num">同比</th><th class="num">同比增量</th><th class="num">月数</th></tr></thead><tbody></tbody></table></div></div>
+</section>
+
+<!-- 自定义对比 -->
+<section class="view" data-view="compare">
+  <div class="card">
+    <div class="filters">
+      <label>开始 <select id="cp-start"></select></label>
+      <label>结束 <select id="cp-end"></select></label>
+      <div class="seg small" id="cp-quick"><button data-v="12">近1年</button><button data-v="24">近2年</button><button data-v="60">近5年</button><button data-v="0">全部</button></div>
+      <label>粒度 <select id="cp-gran"><option value="month">按月</option><option value="quarter">按季</option><option value="year">按年</option></select></label>
+      <label>方式 <select id="cp-mode"><option value="overlay">各自一条线</option><option value="sum">合并加总</option><option value="share">占全国比例</option><option value="index">指数化（起点=100）</option></select></label>
+      <label>图形 <select id="cp-chart"><option value="line">折线</option><option value="bar">柱状</option></select></label>
+    </div>
+    <div class="area-picker">
+      <div class="group-btns" id="cp-groups"></div>
+      <div class="chips" id="cp-areas"></div>
+    </div>
+    <p class="foot">叠加最多 8 条线（颜色跟着区域走，不会因增删而变）；更多区域请用“合并加总”。全国与区域不能相加（会重复计算）。</p>
+  </div>
+  <div id="cp-error" class="banner warn" hidden></div>
+  <div class="card"><div class="card-head"><div><h2 id="cp-title">对比</h2><p class="muted" id="cp-sub"></p></div><button class="btn icon small" data-png="cp-chart-el" title="保存图片">⤓</button></div><div id="cp-chart-el" class="chart tall"></div></div>
+  <div class="card"><div class="card-head"><div><h2>区间汇总</h2><p class="muted">上年同段 = 每个月各自前移 12 个月；缺基数不补算</p></div></div>
+    <div class="table-wrap"><table class="data" id="cp-table"><thead><tr><th>区域／组合</th><th class="num">区间合计</th><th class="num">月均</th><th class="num">占全国</th><th class="num">上年同段</th><th class="num">同比增量</th><th class="num">同比</th></tr></thead><tbody></tbody></table></div></div>
+</section>
+
+<!-- 近期热度 -->
+<section class="view" data-view="periods">
+  <div class="filters card">
+    <div class="seg" id="pd-period"><button data-v="近7天">近 7 天</button><button data-v="近30天">近 30 天</button><button data-v="近90天">近 90 天</button><button data-v="近365天">近 365 天</button></div>
+    <label>排序 <select id="pd-sort"><option value="participants">参赛人次</option><option value="events">比赛场次</option><option value="games">比赛盘数</option><option value="heat">热度指数</option></select></label>
+    <span class="muted">滚动天数统计，不是自然月。热度指数 = 近30天日均 ÷ 近365天日均，大于 1 表示最近比全年平均更活跃。</span>
+  </div>
+  <div class="grid2">
+    <div class="card"><div class="card-head"><div><h2 id="pd-chart-title">前 15</h2></div><button class="btn icon small" data-png="pd-chart" title="保存图片">⤓</button></div><div id="pd-chart" class="chart tall"></div></div>
+    <div class="card"><div class="table-wrap tall"><table class="data" id="pd-table"><thead><tr><th>排名</th><th>区域</th><th class="num">参赛人次</th><th class="num">比赛场次</th><th class="num">比赛盘数</th><th class="num">占全国</th><th class="num">热度</th></tr></thead><tbody></tbody></table></div></div>
+  </div>
+</section>
+
+<!-- 明细 -->
+<section class="view" data-view="table">
+  <div class="filters card"><label>区域 <select id="tb-area"></select></label><span class="muted" id="tb-sub"></span></div>
+  <div class="card"><div class="table-wrap xtall"><table class="data" id="tb-table"><thead><tr>
+    <th>月份</th><th class="num">参赛人次</th><th class="num">人次环比</th><th class="num">人次同比</th><th class="num">比赛场次</th><th class="num">场次环比</th><th class="num">场次同比</th><th class="num">超64人比赛</th><th class="num">占全国人次</th><th>状态</th>
+  </tr></thead><tbody></tbody></table></div></div>
+</section>
+</main>
+
+<footer class="foot-note">
+  参赛人次是累计参与次数，不是去重人数；比赛场次与比赛盘数是不同指标。全国来自独立接口，可能与 35 区域之和略有差别，两者都按原样显示。
+  数据来源：<a href="https://kaiqiuwang.cc/home/cityEventsMonthly.php" target="_blank" rel="noreferrer">开球网公开统计</a>。
+</footer>
+
+<dialog id="settings">
+  <form method="dialog">
+    <h2>设置</h2>
+    <label class="row"><input type="checkbox" id="set-auto"> 打开应用时自动更新</label>
+    <label class="row">距上次更新不足 <select id="set-min"><option value="0">0</option><option value="30">30</option><option value="60">60</option><option value="180">180</option></select> 分钟时，打开不重复更新</label>
+    <label class="row">窗口开着时定时更新 <select id="set-periodic"><option value="0">关闭</option><option value="3">每 3 小时</option><option value="6">每 6 小时</option><option value="12">每 12 小时</option><option value="24">每天</option></select></label>
+    <label class="row">外观 <select id="set-theme"><option value="auto">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></label>
+    <label class="row">缩放 <span class="seg small" id="set-zoom"><button type="button" data-z="-">−</button><button type="button" data-z="0" id="zoom-label">100%</button><button type="button" data-z="+">＋</button></span><span class="muted">快捷键 Ctrl/⌘ + − 0</span></label>
+    <p class="muted" id="set-info"></p>
+    <div class="dialog-actions"><button type="button" class="btn" id="open-data">打开数据文件夹</button><button class="btn primary" value="close">完成</button></div>
+  </form>
+</dialog>
+
+<dialog id="changes">
+  <form method="dialog"><h2>本次更新内容</h2><div id="changes-body"></div><div class="dialog-actions"><button class="btn primary">关闭</button></div></form>
+</dialog>
+
+<div id="toast" class="toast" role="status" hidden></div>
+</body>
+</html>

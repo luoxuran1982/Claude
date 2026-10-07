@@ -1,0 +1,137 @@
+name: kaiqiu-board
+
+on:
+  push:
+    branches: ["main", "claude/**"]
+    tags: ["kaiqiu-v*"]
+    paths: ["kaiqiu-board/**", ".github/workflows/kaiqiu-board.yml"]
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: kaiqiu-board
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: pip install openpyxl certifi
+      - name: Python tests
+        run: python -m unittest discover -s tests -v
+      - name: JS tests
+        run: node tests/model.test.js
+      - name: Source zip
+        run: |
+          mkdir -p ../out
+          cd .. && zip -qr out/KaiqiuBoard-source.zip kaiqiu-board -x 'kaiqiu-board/build/*' 'kaiqiu-board/dist/*' '*/__pycache__/*'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KaiqiuBoard-source
+          path: out/KaiqiuBoard-source.zip
+
+  live-check:
+    # 真实访问开球网，确认接口格式没变；网站从海外访问不稳定，失败不阻塞打包
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install openpyxl certifi
+      - run: python tests/live_check.py
+
+  build:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: Windows-x64
+          - os: macos-latest
+            label: macOS-AppleSilicon
+          - os: macos-15-intel
+            label: macOS-Intel
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller pillow
+      - name: Install NSIS
+        if: runner.os == 'Windows'
+        run: choco install nsis -y --no-progress
+      - name: Build
+        shell: bash
+        run: python packaging/build.py
+      - name: Smoke test packaged app
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then EXE=dist/KaiqiuBoard/KaiqiuBoard.exe; else EXE="dist/开球网数据看板.app/Contents/MacOS/KaiqiuBoard"; fi
+          export KAIQIU_BOARD_DATA="$RUNNER_TEMP/kb-data"
+          "$EXE" --serve-only --no-refresh --port 18768 &
+          pid=$!
+          ok=
+          for i in $(seq 40); do curl -sf http://127.0.0.1:18768/api/status && ok=1 && break; sleep 2; done
+          [ -n "$ok" ] || { cat "$KAIQIU_BOARD_DATA/kaiqiu.log" || true; exit 1; }
+          curl -sf http://127.0.0.1:18768/ | grep -q "开球网数据看板"
+          curl -sf http://127.0.0.1:18768/vendor/echarts.min.js -o /dev/null
+          curl -sf http://127.0.0.1:18768/api/export.xlsx -o "$RUNNER_TEMP/out.xlsx"
+          python -c "import openpyxl,sys; print(openpyxl.load_workbook(sys.argv[1]).sheetnames)" "$RUNNER_TEMP/out.xlsx"
+          if [ "$RUNNER_OS" = "Windows" ]; then taskkill //F //IM KaiqiuBoard.exe || true; else kill $pid || true; fi
+      - name: Check WebView2 window can be created
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:KAIQIU_BOARD_DATA = "$env:RUNNER_TEMP\kb-gui"
+          $p = Start-Process -FilePath dist\KaiqiuBoard\KaiqiuBoard.exe -ArgumentList "--no-refresh","--port","18769" -PassThru
+          Start-Sleep -Seconds 20
+          $log = Get-Content "$env:KAIQIU_BOARD_DATA\kaiqiu.log" -Raw
+          Write-Output $log
+          Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+          if ($log -match "原生窗口启动失败") { Write-Warning "WebView2 窗口在 CI 上没起来（应用会自动改用浏览器）" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KaiqiuBoard-${{ matrix.label }}
+          path: |
+            kaiqiu-board/dist/*.exe
+            kaiqiu-board/dist/*.zip
+            kaiqiu-board/dist/*.dmg
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/kaiqiu-v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - run: ls -la artifacts
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: 开球网数据看板 ${{ github.ref_name }}
+          files: artifacts/*
+          body: |
+            Windows：下载 `KaiqiuBoard-Setup-*-x64.exe` 双击安装（不需要管理员权限）；或下载 `windows-x64.zip` 解压即用。
+            macOS：Apple 芯片下载 `macOS-arm64.dmg`，Intel 芯片下载 `macOS-x86_64.dmg`；拖进“应用程序”后，第一次右键 →“打开”。
+            源码：`KaiqiuBoard-source.zip`。详见 kaiqiu-board/docs/安装说明.md。
