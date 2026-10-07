@@ -1,5 +1,6 @@
 """从开球网公开 CSV 接口取数并解析。
 
+（备用域名 kaiqiu.cc，路径相同）
 全国：   https://kaiqiuwang.cc/home/cityEventsMonthly.php
 区域：   同上 ?province=江苏
 滚动时段：https://kaiqiuwang.cc/home/cityEvents.php（近7天），?days=30/90/365
@@ -17,6 +18,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 
 BASE = "https://kaiqiuwang.cc/home"
+# 同一个网站的另一个域名；主域名连不上时自动换用
+MIRRORS = ["https://kaiqiu.cc/home"]
 MONTHLY_URL = BASE + "/cityEventsMonthly.php"
 PERIOD_URL = BASE + "/cityEvents.php"
 
@@ -68,6 +71,20 @@ _CTX = None
 
 
 def fetch_text(url: str, retries: int = 3, timeout: float = 45) -> str:
+    """先用主域名；失败后依次换备用域名。"""
+    try:
+        return _fetch_one(url, retries, timeout)
+    except SourceError as first:
+        for mirror in MIRRORS:
+            if url.startswith(BASE):
+                try:
+                    return _fetch_one(mirror + url[len(BASE):], 1, timeout)
+                except SourceError:
+                    pass
+        raise first
+
+
+def _fetch_one(url: str, retries: int, timeout: float) -> str:
     global _CTX
     if _CTX is None:
         _CTX = _ssl_context()

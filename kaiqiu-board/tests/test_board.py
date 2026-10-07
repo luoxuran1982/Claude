@@ -87,6 +87,21 @@ class ParseTests(unittest.TestCase):
         self.assertEqual(source.period_url(None), source.PERIOD_URL)
         self.assertTrue(source.period_url(30).endswith("?days=30"))
 
+    def test_mirror_fallback(self):
+        calls = []
+        orig = source._fetch_one
+        def fake(url, retries, timeout):
+            calls.append(url)
+            if url.startswith(source.BASE):
+                raise source.SourceError("down")
+            return "ok"
+        source._fetch_one = fake
+        try:
+            self.assertEqual(source.fetch_text(source.monthly_url("江苏")), "ok")
+        finally:
+            source._fetch_one = orig
+        self.assertTrue(calls[1].startswith("https://kaiqiu.cc/home/cityEventsMonthly.php?province="))
+
     def test_fetch_all_reports_failures(self):
         with self.assertRaises(source.SourceError) as cm:
             source.fetch_all(fetch=fake_fetch(fail={"江苏", "广东"}))

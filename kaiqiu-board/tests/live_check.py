@@ -11,3 +11,10 @@ print("月份：", snap["months"][0], "→", snap["months"][-1], len(snap["month
 print("全国最近完整月：", snap["months"][-2], snap["data"]["全国"]["participants"][-2])
 print("时段：", {k: len(v) for k, v in periods.items()})
 print("Excel 字节：", len(excel.build(snap)))
+
+# 备用域名是否可用（只报告，不影响结果）
+try:
+    text = source._fetch_one(source.MIRRORS[0] + "/cityEvents.php?days=30", 1, 30)
+    print("备用域名 kaiqiu.cc 可用，时段行数：", len(source.parse_period("近30天", text)))
+except Exception as exc:  # noqa: BLE001
+    print("备用域名 kaiqiu.cc 不可用：", exc)
